@@ -175,49 +175,23 @@ def save_run_outputs(output_dir, summary, labels, preds, probs):
             writer.writerow(row)
 
 
-def compute_gradient_norm(model, return_param_norms=False):
+def compute_gradient_norm(model):
     # Compute the global gradient norm.
     total_norm_sq = None
-    param_norms = {} if return_param_norms else None
 
-    for name, param in model.named_parameters():
+    for param in model.parameters():
         if param.grad is None:
             continue
         grad_norm_sq = param.grad.detach().pow(2).sum()
         total_norm_sq = grad_norm_sq if total_norm_sq is None else total_norm_sq + grad_norm_sq
-        if return_param_norms:
-            param_norms[name] = float(grad_norm_sq.sqrt().detach().cpu())
 
-    total_norm = 0.0 if total_norm_sq is None else float(total_norm_sq.sqrt().detach().cpu())
-    return total_norm, (param_norms or {})
-
-
-def check_gradient_health(model, verbose=False):
-    # Optionally inspect gradients for numerical issues.
-    if not verbose:
-        return True, []
-
-    issues = []
-    for name, param in model.named_parameters():
-        if param.grad is None:
-            continue
-        grad = param.grad.data
-        if torch.isnan(grad).any():
-            issues.append(f"{name}: NaN gradient")
-        if torch.isinf(grad).any():
-            issues.append(f"{name}: Inf gradient")
-        grad_norm = grad.norm(2).item()
-        if grad_norm > 100:
-            issues.append(f"{name}: large gradient ({grad_norm:.2f})")
-        if grad_norm < 1e-7 and param.requires_grad:
-            issues.append(f"{name}: tiny gradient ({grad_norm:.2e})")
-    return len(issues) == 0, issues
+    return 0.0 if total_norm_sq is None else float(total_norm_sq.sqrt().detach().cpu())
 
 
 def adaptive_gradient_clipping(model, max_norm=5.0, grad_history=None, adaptive=True,
                                precomputed_norm=None):
     # Clip gradients with a history-aware threshold.
-    current_norm = precomputed_norm if precomputed_norm is not None else compute_gradient_norm(model)[0]
+    current_norm = precomputed_norm if precomputed_norm is not None else compute_gradient_norm(model)
 
     if adaptive and grad_history is not None and len(grad_history) >= 10:
         mean_norm = np.mean(grad_history[-10:])
@@ -237,17 +211,3 @@ def adaptive_gradient_clipping(model, max_norm=5.0, grad_history=None, adaptive=
         grad_history = grad_history[-100:]
 
     return adaptive_max, was_clipped, grad_history
-
-
-DATASET_KNN_K = {}
-KNN_K_DEFAULT = 15
-
-
-def resolve_knn_k(dataset, override=None):
-    # Resolve the kNN neighbor count for a dataset.
-    if override is not None:
-        return int(override)
-    ds = dataset.upper() if dataset else None
-    if ds and ds in DATASET_KNN_K:
-        return int(DATASET_KNN_K[ds])
-    return KNN_K_DEFAULT

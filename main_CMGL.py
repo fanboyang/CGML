@@ -60,7 +60,6 @@ if __name__ == "__main__":
         summary["fold"] = fold
         fold_results.append(summary)
 
-    metric_keys = ["accuracy", "f1_macro"]
     all_keys = ["accuracy", "f1_macro", "macro_recall", "f1_weighted", "auc"]
     vals = {k: [r.get(k, 0.0) for r in fold_results] for k in all_keys}
     print("\n5-Fold Summary")

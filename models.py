@@ -75,9 +75,9 @@ class OmicsFusion(nn.Module):
 
 
 class GraphFusion(nn.Module):
-    def __init__(self, V, strategy="intersection"):
+    def __init__(self, strategy="intersection"):
         super().__init__()
-        self.V, self.strategy = V, strategy
+        self.strategy = strategy
     def forward(self, adj_list, N):
         # Merge per-view graphs into one fused graph.
         dev = adj_list[0].device if adj_list else torch.device('cpu')
@@ -124,7 +124,7 @@ class GNNStage(nn.Module):
         super().__init__()
         self.dropout = dropout
         self.fus = OmicsFusion(dim_list, hid, dropout)
-        self.gf = GraphFusion(V, strategy)
+        self.gf = GraphFusion(strategy)
         gnn_hid_list = [gnn_hid] * n_layers if isinstance(gnn_hid, int) else list(gnn_hid)
         self.gnns = nn.ModuleList()
         self.norms = nn.ModuleList()

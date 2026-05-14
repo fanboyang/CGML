@@ -35,7 +35,7 @@ pip install -r requirements.txt
 python main_CMGL.py
 ```
 
-Per-fold outputs and the aggregated 5-fold summary are written to `results/<timestamp>/`:
+The repository does not include generated run outputs. After `python main_CMGL.py` finishes, per-fold outputs and the aggregated 5-fold summary are created under `results/<timestamp>/`:
 
 ```text
 results/<timestamp>/
@@ -59,7 +59,7 @@ CMGL
 ├── models.py            # MRF, GNNStage, OmicsFusion, GraphFusion
 ├── losses.py            # EDL, label-smoothed CE, diversity, supervised contrastive
 ├── utils.py             # Graph construction, metrics, I/O
-├── framework.pdf    # Framework overview figure
+├── framework.png        # Framework overview figure
 ├── requirements.txt     # Python dependencies
 └── README.md
 ```

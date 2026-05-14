@@ -7,8 +7,8 @@ from models import init_model_dict, GNNStage
 from losses import get_mrf_loss, get_gnn_loss
 from utils import (build_trte_graphs, load_splits, prepare_tensors,
                    cal_class_weight, compute_metrics,
-                   compute_gradient_norm, check_gradient_health,
-                   adaptive_gradient_clipping, save_run_outputs)
+                   compute_gradient_norm, adaptive_gradient_clipping,
+                   save_run_outputs)
 
 cuda = True if torch.cuda.is_available() else False
 
@@ -16,14 +16,14 @@ cuda = True if torch.cuda.is_available() else False
 class EarlyStopping:
     def __init__(self, patience=50, min_delta=1e-4, mode='max'):
         self.patience, self.min_delta, self.mode = patience, min_delta, mode
-        self.counter, self.best, self.stop, self.best_ep = 0, None, False, 0
+        self.counter, self.best, self.stop = 0, None, False
     def __call__(self, score, epoch):
         if self.best is None:
-            self.best, self.best_ep = score, epoch
+            self.best = score
             return False
         imp = score > self.best + self.min_delta if self.mode == 'max' else score < self.best - self.min_delta
         if imp:
-            self.best, self.best_ep, self.counter = score, epoch, 0
+            self.best, self.counter = score, 0
         else:
             self.counter += 1
             if self.counter >= self.patience:
@@ -38,7 +38,6 @@ def train_mrf(data_folder, view_list, num_class, lr_mrf, num_epoch_mrf,
     device = torch.device('cuda' if cuda else 'cpu')
     use_amp = device.type == "cuda"
     amp_dtype = torch.bfloat16 if use_amp else None
-    scaler_mrf = None
     grad_hist_mrf = []
 
     data_tr_raw, data_val_raw, data_te_raw, labels_tr, labels_val, labels_te = \
@@ -66,21 +65,12 @@ def train_mrf(data_folder, view_list, num_class, lr_mrf, num_epoch_mrf,
         with amp_ctx:
             out = model_dict["MRF"](data_tr)
             loss = get_mrf_loss(out, labels_tr_t, num_class, epoch)
-        if scaler_mrf is not None:
-            scaler_mrf.scale(loss).backward()
-            scaler_mrf.unscale_(optim_mrf)
-        else:
-            loss.backward()
-        grad_norm_before, _ = compute_gradient_norm(model_dict["MRF"])
-        _, _ = check_gradient_health(model_dict["MRF"], verbose=False)
+        loss.backward()
+        grad_norm_before = compute_gradient_norm(model_dict["MRF"])
         _, _, grad_hist_mrf = adaptive_gradient_clipping(
             model_dict["MRF"], max_norm=5.0, grad_history=grad_hist_mrf,
             adaptive=True, precomputed_norm=grad_norm_before)
-        if scaler_mrf is not None:
-            scaler_mrf.step(optim_mrf)
-            scaler_mrf.update()
-        else:
-            optim_mrf.step()
+        optim_mrf.step()
         sched_mrf.step(loss.item())
         if epoch % test_interval == 0:
             print("  MRF Epoch {:d} | Loss: {:.4f}".format(epoch, loss.item()))
@@ -115,7 +105,6 @@ def train_gnn(mrf, lr_gnn, num_epoch_gnn, knn_k,
     labels_tr_t = mrf['labels_tr_t']
     conf_tr, conf_val, conf_te = mrf['conf_tr'], mrf['conf_val'], mrf['conf_te']
     cw, dim_list, strategy = mrf['cw'], mrf['dim_list'], mrf['strategy']
-    scaler_gnn = None
     grad_hist_gnn = []
 
     adj_tr_l, adj_val_l, n_tr, n_val = build_trte_graphs(data_tr, data_val, knn_k, device)
@@ -146,21 +135,12 @@ def train_gnn(mrf, lr_gnn, num_epoch_gnn, knn_k,
             masked_out = {k: v[tr_idx] if torch.is_tensor(v) and v.ndim > 0 and v.shape[0] == n_tr + n_val else v
                           for k, v in out.items()}
             loss = get_gnn_loss(masked_out, labels_tr_t, cw)
-        if scaler_gnn is not None:
-            scaler_gnn.scale(loss).backward()
-            scaler_gnn.unscale_(optim_gnn)
-        else:
-            loss.backward()
-        grad_norm_before, _ = compute_gradient_norm(model)
-        _, _ = check_gradient_health(model, verbose=False)
+        loss.backward()
+        grad_norm_before = compute_gradient_norm(model)
         _, _, grad_hist_gnn = adaptive_gradient_clipping(
             model, max_norm=5.0, grad_history=grad_hist_gnn,
             adaptive=True, precomputed_norm=grad_norm_before)
-        if scaler_gnn is not None:
-            scaler_gnn.step(optim_gnn)
-            scaler_gnn.update()
-        else:
-            optim_gnn.step()
+        optim_gnn.step()
 
         model.eval()
         with torch.no_grad():
@@ -227,11 +207,10 @@ def warmup_knn_k(mrf, lr_gnn, num_epoch_gnn,
         f1 = val_m.get('f1_macro', 0.0)
         results.append((k, f1))
         print("  warmup k={:d}".format(k))
-    best_k, best_f1 = select_best_k(results)
+    best_k, _ = select_best_k(results)
     print("  => selected k={:d}".format(best_k))
     return best_k
 
 
 def select_best_k(results):
-    
     return max(results, key=lambda x: (x[1], x[0]))
